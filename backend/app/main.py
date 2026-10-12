@@ -64,6 +64,18 @@ async def custom_exception_handler(request: Request, exc: YouTubeAppException):
     )
 
 
+@app.get("/", tags=["System"])
+async def root():
+    """Root landing endpoint providing service status and documentation link."""
+    return {
+        "status": "online",
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "docs_url": "/docs",
+        "health_check": "/api/health",
+    }
+
+
 @app.get("/api/health", tags=["System"])
 async def health_check():
     """Returns system status, service health, and dependency versions."""
