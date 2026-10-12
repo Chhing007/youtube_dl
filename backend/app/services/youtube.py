@@ -73,28 +73,43 @@ def format_filesize(bytes_val: Optional[int]) -> Optional[str]:
 
 
 def _extract_metadata_sync(canonical_url: str) -> Dict[str, Any]:
-    """Synchronous metadata extraction via yt-dlp."""
-    opts = get_base_ydl_opts()
-    opts["skip_download"] = True
+    """Synchronous metadata extraction via yt-dlp with multi-client strategy fallback."""
+    base_opts = get_base_ydl_opts()
+    base_opts["skip_download"] = True
 
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(canonical_url, download=False)
-            return ydl.sanitize_info(info)
-    except yt_dlp.utils.DownloadError as e:
-        msg = str(e)
-        if "Private video" in msg or "Sign in to confirm" in msg or "bot" in msg.lower():
-            raise VideoUnavailableException(f"Video is unavailable or protected: {msg}")
-        elif "HTTP Error 429" in msg or "Too Many Requests" in msg:
-            raise YouTubeRateLimitException()
-        elif "Video unavailable" in msg or "not found" in msg.lower():
-            raise VideoNotFoundException("Video not found or was deleted by creator")
-        elif "Premieres in" in msg or "live event" in msg.lower():
-            raise LiveStreamNotSupportedException("Upcoming or live streams cannot be downloaded")
-        else:
-            raise YouTubeAppException(status_code=400, detail=f"Failed to fetch video info: {msg}")
-    except Exception as e:
-        raise YouTubeAppException(status_code=500, detail=f"Unexpected error: {str(e)}")
+    client_strategies = [
+        {"player_client": ["android", "web", "mweb"]},
+        {"player_client": ["android_creator", "web"]},
+        {"player_client": ["ios", "android"]},
+        {},
+    ]
+
+    last_error = None
+    for strategy in client_strategies:
+        try:
+            opts = dict(base_opts)
+            if strategy:
+                extractor_args = dict(opts.get("extractor_args", {}))
+                extractor_args["youtube"] = strategy
+                opts["extractor_args"] = extractor_args
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(canonical_url, download=False)
+                return ydl.sanitize_info(info)
+        except Exception as e:
+            last_error = e
+            continue
+
+    msg = str(last_error or "Unknown error")
+    if "Private video" in msg or "Sign in to confirm" in msg or "bot" in msg.lower():
+        raise VideoUnavailableException(f"Video is protected or requires authentication: {msg}")
+    elif "HTTP Error 429" in msg or "Too Many Requests" in msg:
+        raise YouTubeRateLimitException()
+    elif "Video unavailable" in msg or "not found" in msg.lower():
+        raise VideoNotFoundException("Video not found or was deleted by creator")
+    elif "Premieres in" in msg or "live event" in msg.lower():
+        raise LiveStreamNotSupportedException("Upcoming or live streams cannot be downloaded")
+    else:
+        raise YouTubeAppException(status_code=400, detail=f"Failed to fetch video info: {msg}")
 
 
 async def get_video_info(canonical_url: str) -> VideoMetadata:

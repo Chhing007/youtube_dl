@@ -117,10 +117,27 @@ def _download_and_mux_sync(
             "outtmpl": str(temp_target_path).rsplit(".", 1)[0] + ".%(ext)s",
         })
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(canonical_url, download=True)
-        title = info.get("title", "youtube_video")
-        return title
+    client_strategies = [
+        ["android", "web", "mweb"],
+        ["android_creator", "web"],
+        ["ios", "android"],
+    ]
+
+    last_error = None
+    for clients in client_strategies:
+        try:
+            ydl_opts["extractor_args"] = {"youtube": {"player_client": clients}}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(canonical_url, download=True)
+                title = info.get("title", "youtube_video")
+                return title
+        except Exception as e:
+            last_error = e
+            continue
+
+    if last_error:
+        raise last_error
+    raise Exception("Download failed with all client strategies")
 
 
 async def prepare_media_download(
