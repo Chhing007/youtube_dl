@@ -75,7 +75,7 @@ def _download_and_mux_sync(
         "noplaylist": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "android", "mweb", "web"],
+                "player_client": ["android", "web", "mweb"],
             }
         },
         "outtmpl": str(temp_target_path).replace(".mp4", "") if format_type == "video" else str(temp_target_path).replace(".mp3", ""),

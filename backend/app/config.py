@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # Optional yt-dlp anti-bot configuration
     YOUTUBE_COOKIES_FILE: str | None = os.getenv("YOUTUBE_COOKIES_FILE", None)
+    YOUTUBE_COOKIES_TEXT: str | None = os.getenv("YOUTUBE_COOKIES_TEXT", None)
     YOUTUBE_PROXY: str | None = os.getenv("YOUTUBE_PROXY", None)
 
     class Config:
@@ -42,5 +43,13 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# If cookies are provided as an environment variable text, save them to a file automatically
+if settings.YOUTUBE_COOKIES_TEXT and not settings.YOUTUBE_COOKIES_FILE:
+    cookie_path = settings.TEMP_DIR / "youtube_cookies.txt"
+    cookie_path.parent.mkdir(parents=True, exist_ok=True)
+    cookie_path.write_text(settings.YOUTUBE_COOKIES_TEXT, encoding="utf-8")
+    settings.YOUTUBE_COOKIES_FILE = str(cookie_path)
+
 # Ensure temp directory exists
 settings.TEMP_DIR.mkdir(parents=True, exist_ok=True)
+

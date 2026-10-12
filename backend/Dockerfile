@@ -1,9 +1,10 @@
 # Multi-stage production Dockerfile for FastAPI + yt-dlp + ffmpeg
 FROM python:3.11-slim AS base
 
-# Install system dependencies: ffmpeg for media muxing, curl for health checks
+# Install system dependencies: ffmpeg for media muxing, nodejs for YouTube JS cipher solving, curl for health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    nodejs \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*

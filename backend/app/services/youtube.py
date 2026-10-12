@@ -24,7 +24,7 @@ def get_base_ydl_opts() -> Dict[str, Any]:
         "no_color": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "android", "mweb", "web"],
+                "player_client": ["android", "web", "mweb"],
             }
         },
     }
