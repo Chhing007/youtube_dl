@@ -60,6 +60,7 @@ export default function Home() {
         metadata.url,
         activeTab,
         selectedQuality,
+        metadata.title,
         (percent) => {
           setStatus('downloading');
           setProgressPercent(percent);

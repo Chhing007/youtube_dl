@@ -46,6 +46,7 @@ export async function initiateDirectDownload(
   url: string,
   format: 'video' | 'audio',
   quality: string,
+  videoTitle?: string,
   onProgress?: (percentage: number, loadedBytes: number, totalBytes: number) => void
 ): Promise<void> {
   const downloadUrl = buildDownloadStreamUrl(url, format, quality);
@@ -66,8 +67,11 @@ export async function initiateDirectDownload(
       timeout: 300000, // 5 minutes timeout for large video streams
     });
 
-    // Extract filename from Content-Disposition header if available
-    let filename = `download_${Date.now()}.${format === 'audio' ? 'mp3' : 'mp4'}`;
+    const ext = format === 'audio' ? 'mp3' : 'mp4';
+    // Clean and preserve the video title
+    const safeTitle = videoTitle ? videoTitle.replace(/[\/\\:\*\?"<>\|]/g, '_').trim() : '';
+    let filename = safeTitle ? `${safeTitle}.${ext}` : `video_${Date.now()}.${ext}`;
+
     const disposition = response.headers['content-disposition'];
     if (disposition) {
       const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);

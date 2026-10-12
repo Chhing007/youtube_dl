@@ -22,6 +22,11 @@ def get_base_ydl_opts() -> Dict[str, Any]:
         "socket_timeout": 15,
         "extract_flat": False,
         "no_color": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["ios", "android", "mweb", "web"],
+            }
+        },
     }
 
     if settings.YOUTUBE_COOKIES_FILE:
