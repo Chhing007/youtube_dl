@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Youtube, Sparkles, ShieldCheck, Zap } from 'lucide-react';
+import { API_BASE_URL } from '@/lib/api';
 
 export const Header: React.FC = () => {
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
@@ -9,7 +10,7 @@ export const Header: React.FC = () => {
   useEffect(() => {
     const checkHealth = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/health', { method: 'GET' });
+        const res = await fetch(`${API_BASE_URL}/api/health`, { method: 'GET' });
         if (res.ok) setApiOnline(true);
         else setApiOnline(false);
       } catch {
@@ -56,9 +57,9 @@ export const Header: React.FC = () => {
             />
             <span className="text-slate-300">
               {apiOnline === true
-                ? 'Backend Ready'
+                ? 'Backend Online'
                 : apiOnline === false
-                ? 'Local API (Port 8000)'
+                ? 'Connecting...'
                 : 'Connecting...'}
             </span>
           </div>

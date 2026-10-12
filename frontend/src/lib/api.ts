@@ -1,7 +1,9 @@
 import axios from 'axios';
 import { VideoMetadata, ApiError } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL || 'https://youtube-backend-xjiu.onrender.com'
+).replace(/\/$/, '');
 
 export async function fetchVideoInfo(youtubeUrl: string): Promise<VideoMetadata> {
   try {
@@ -12,7 +14,7 @@ export async function fetchVideoInfo(youtubeUrl: string): Promise<VideoMetadata>
         headers: {
           'Content-Type': 'application/json',
         },
-        timeout: 25000,
+        timeout: 60000, // 60s timeout to allow Render free tier instance to wake up
       }
     );
     return response.data;
@@ -21,9 +23,11 @@ export async function fetchVideoInfo(youtubeUrl: string): Promise<VideoMetadata>
       const errorData = err.response.data as ApiError;
       throw new Error(errorData.detail || 'Failed to fetch video information');
     } else if (err.code === 'ECONNABORTED') {
-      throw new Error('Connection timed out. YouTube took too long to respond.');
+      throw new Error('Connection timed out. Render backend may still be waking up. Please retry in a few seconds.');
     } else if (err.message && err.message.includes('Network Error')) {
-      throw new Error('Cannot connect to backend server. Make sure the FastAPI service is running on port 8000.');
+      throw new Error(
+        `Cannot connect to backend server (${API_BASE_URL}). If using Render free tier, please wait 30-40 seconds for it to wake up, or verify the backend is online.`
+      );
     }
     throw new Error(err.message || 'An unexpected error occurred while fetching video details.');
   }
