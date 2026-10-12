@@ -1,4 +1,5 @@
 import os
+import re
 import urllib.parse
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Query, BackgroundTasks, status
@@ -50,7 +51,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+",
+    allow_origin_regex=r"https://.*\.vercel\.app|https://.*\.onrender\.com|http://localhost:\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,12 +86,14 @@ async def health_check():
     import shutil
 
     ffmpeg_installed = shutil.which("ffmpeg") is not None
+    node_installed = shutil.which("node") is not None
     return {
         "status": "healthy",
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "yt_dlp_version": yt_dlp.version.__version__,
         "ffmpeg_installed": ffmpeg_installed,
+        "node_installed": node_installed,
     }
 
 
@@ -128,8 +131,7 @@ async def download_media(
     quality: str = Query("720p", description="Resolution (e.g. 1080p, 720p) or Bitrate (e.g. 320kbps, 192kbps)"),
 ):
     """
-    Streams requested video or audio file directly to client with HTTP Content-Disposition headers.
-    Automatically scrubs ephemeral files immediately upon completion or disconnection.
+    Streams requested video or audio file directly to client with the original video title.
     """
     # 1. Validate & sanitize YouTube URL against SSRF and injection
     is_valid, canonical_url, _ = sanitize_youtube_url(url)
@@ -144,23 +146,21 @@ async def download_media(
             error_code="INVALID_QUALITY",
         )
 
-    # 3. Process, mux with ffmpeg if needed, and prepare stream
+    # 3. Process download with yt-dlp & FFmpeg
     target_file, filename, mime_type, file_size = await prepare_media_download(
         canonical_url=canonical_url,
         format_type=format,
         quality=quality,
     )
 
-    # Register fallback cleanup in background tasks in case of early disconnect
-    background_tasks.add_task(cleanup_file_safely, target_file)
-
     # Encode filename for RFC 5987 / RFC 6266 compliance
-    ascii_filename = filename.encode("ascii", "ignore").decode("ascii") or "media"
-    encoded_filename = urllib.parse.quote(filename)
+    ascii_clean = re.sub(r'[^\x20-\x7E]', '_', filename).strip()
+    if not ascii_clean.replace('.', '').strip('_ '):
+        ascii_clean = f"media.{'mp3' if format == 'audio' else 'mp4'}"
+    encoded_filename = urllib.parse.quote(filename, encoding="utf-8")
 
     headers = {
-        "Content-Disposition": f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{encoded_filename}',
-        "Content-Length": str(file_size),
+        "Content-Disposition": f'attachment; filename="{ascii_clean}"; filename*=UTF-8\'\'{encoded_filename}',
         "Content-Type": mime_type,
         "Accept-Ranges": "bytes",
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -168,6 +168,11 @@ async def download_media(
         "Expires": "0",
     }
 
+    if file_size and file_size > 0:
+        headers["Content-Length"] = str(file_size)
+
+    # Stream from local file and clean up after delivery
+    background_tasks.add_task(cleanup_file_safely, target_file)
     return StreamingResponse(
         file_streamer_with_cleanup(target_file),
         media_type=mime_type,

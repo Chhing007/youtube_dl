@@ -1,6 +1,13 @@
+"""
+YouTube Service - High-performance metadata extraction.
+Uses yt-dlp with Node.js runtime and visionos/default client strategies
+to reliably extract metadata without requiring browser cookies.
+"""
 import asyncio
-import yt_dlp
+import logging
 from typing import Dict, Any, List, Optional
+import yt_dlp
+
 from app.config import settings
 from app.schemas import VideoMetadata, FormatOption
 from app.exceptions import (
@@ -13,30 +20,7 @@ from app.exceptions import (
 )
 from app.services.security import extract_youtube_video_id
 
-
-def get_base_ydl_opts() -> Dict[str, Any]:
-    """Base yt-dlp options applying security and network configurations."""
-    opts: Dict[str, Any] = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "socket_timeout": 15,
-        "extract_flat": False,
-        "no_color": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web", "mweb"],
-            }
-        },
-    }
-
-    if settings.YOUTUBE_COOKIES_FILE:
-        opts["cookiefile"] = settings.YOUTUBE_COOKIES_FILE
-
-    if settings.YOUTUBE_PROXY:
-        opts["proxy"] = settings.YOUTUBE_PROXY
-
-    return opts
+logger = logging.getLogger(__name__)
 
 
 def format_duration(seconds: Optional[int]) -> str:
@@ -73,16 +57,45 @@ def format_filesize(bytes_val: Optional[int]) -> Optional[str]:
     return f"{mb:.1f} MB"
 
 
+def get_base_ydl_opts() -> Dict[str, Any]:
+    """Base yt-dlp options configured with Node.js runtime for JavaScript challenge solving."""
+    opts: Dict[str, Any] = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "socket_timeout": 20,
+        "extract_flat": False,
+        "no_color": True,
+        "js_runtimes": {"node": {}},
+        "cachedir": False,
+        "extractor_retries": 3,
+    }
+
+    if settings.YOUTUBE_COOKIES_FILE:
+        opts["cookiefile"] = settings.YOUTUBE_COOKIES_FILE
+
+    if settings.YOUTUBE_PROXY:
+        opts["proxy"] = settings.YOUTUBE_PROXY
+
+    return opts
+
+
 def _extract_metadata_sync(canonical_url: str) -> Dict[str, Any]:
-    """Synchronous metadata extraction via yt-dlp with multi-client strategy fallback."""
+    """
+    Synchronous metadata extraction via yt-dlp.
+    Uses modern client strategies that bypass bot detection without cookies.
+    """
     base_opts = get_base_ydl_opts()
     base_opts["skip_download"] = True
 
+    # Priority strategies:
+    # 1. visionos + default: Most resilient against YouTube bot detection in 2025/2026
+    # 2. tv + default: Smart TV client fallback
+    # 3. Default yt-dlp client routing
     client_strategies = [
-        {"player_client": ["android", "web", "mweb"]},
-        {"player_client": ["android_creator", "web"]},
-        {"player_client": ["ios", "android"]},
-        {},
+        {"player_client": ["visionos", "default"]},
+        {"player_client": ["tv", "default"]},
+        None,
     ]
 
     last_error = None
@@ -90,34 +103,15 @@ def _extract_metadata_sync(canonical_url: str) -> Dict[str, Any]:
         try:
             opts = dict(base_opts)
             if strategy:
-                extractor_args = dict(opts.get("extractor_args", {}))
-                extractor_args["youtube"] = strategy
-                opts["extractor_args"] = extractor_args
+                opts["extractor_args"] = {"youtube": strategy}
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(canonical_url, download=False)
-                return ydl.sanitize_info(info)
+                if info:
+                    return ydl.sanitize_info(info)
         except Exception as e:
             last_error = e
+            logger.warning(f"Metadata extraction strategy {strategy} failed: {e}")
             continue
-
-    # If direct extraction encounters bot blocks or 429, fall back to high-availability Invidious mirrors
-    video_id = extract_youtube_video_id(canonical_url)
-    if video_id:
-        mirrors = [
-            f"https://yewtu.be/watch?v={video_id}",
-            f"https://invidious.flokinet.to/watch?v={video_id}",
-            f"https://inv.bp.projectsegfau.lt/watch?v={video_id}",
-        ]
-        for mirror_url in mirrors:
-            try:
-                mirror_opts = dict(base_opts)
-                mirror_opts.pop("extractor_args", None)
-                with yt_dlp.YoutubeDL(mirror_opts) as ydl:
-                    info = ydl.extract_info(mirror_url, download=False)
-                    if info and info.get("formats"):
-                        return ydl.sanitize_info(info)
-            except Exception:
-                continue
 
     msg = str(last_error or "Unknown error")
     if "Private video" in msg:
@@ -128,6 +122,8 @@ def _extract_metadata_sync(canonical_url: str) -> Dict[str, Any]:
         raise VideoNotFoundException("Video not found or was deleted by creator")
     elif "Premieres in" in msg or "live event" in msg.lower():
         raise LiveStreamNotSupportedException("Upcoming or live streams cannot be downloaded")
+    elif "Sign in to confirm" in msg or "bot" in msg.lower():
+        raise VideoUnavailableException("YouTube is temporarily blocking requests. Please try again in a moment.")
     else:
         raise YouTubeAppException(status_code=400, detail=f"Failed to fetch video: {msg}")
 
@@ -137,6 +133,10 @@ async def get_video_info(canonical_url: str) -> VideoMetadata:
     Asynchronously extracts metadata and builds available format choices.
     Runs extraction inside a threadpool executor to avoid blocking the event loop.
     """
+    video_id = extract_youtube_video_id(canonical_url)
+    if not video_id:
+        raise VideoNotFoundException("Could not extract video ID from URL")
+
     info = await asyncio.to_thread(_extract_metadata_sync, canonical_url)
 
     # Basic validations
@@ -163,7 +163,11 @@ async def get_video_info(canonical_url: str) -> VideoMetadata:
         if abr and abr > best_audio_bitrate:
             best_audio_bitrate = int(abr)
 
-    # Standard desired video resolutions
+    # If no video heights were found in formats, provide standard defaults
+    if not raw_video_heights:
+        raw_video_heights = {720, 480, 360}
+
+    # Desired video resolutions
     target_resolutions = [
         ("1080p", 1080),
         ("720p", 720),
@@ -172,12 +176,10 @@ async def get_video_info(canonical_url: str) -> VideoMetadata:
     ]
 
     video_formats: List[FormatOption] = []
+    max_available_height = max(raw_video_heights) if raw_video_heights else 720
     for label, height in target_resolutions:
-        # Check if this resolution is available or lower than the max height
-        max_available_height = max(raw_video_heights) if raw_video_heights else 720
         if height <= max_available_height or height in raw_video_heights:
             # Estimate file size: (video bitrate + 128kbps audio) * duration
-            # Standard video bitrates approx: 1080p ~ 3.5Mbps, 720p ~ 2Mbps, 480p ~ 1Mbps, 360p ~ 0.5Mbps
             bitrate_map = {1080: 3500_000, 720: 2000_000, 480: 1000_000, 360: 500_000}
             est_bitrate = bitrate_map.get(height, 1000_000) + 128_000
             approx_bytes = int((est_bitrate / 8) * duration) if duration > 0 else None
@@ -191,15 +193,15 @@ async def get_video_info(canonical_url: str) -> VideoMetadata:
                     resolution=f"{height}p",
                     filesize_approx=approx_bytes,
                     filesize_formatted=format_filesize(approx_bytes),
-                    note="Video with merged audio (H.264/AAC)",
+                    note="High quality MP4 with merged audio",
                 )
             )
 
     # Standard audio formats
     target_audio = [
-        ("320kbps", 320, "High Definition MP3"),
-        ("192kbps", 192, "Standard Quality MP3"),
-        ("128kbps", 128, "Compact Size MP3"),
+        ("320kbps", 320, "High Definition MP3 (320kbps)"),
+        ("192kbps", 192, "Standard Quality MP3 (192kbps)"),
+        ("128kbps", 128, "Compact Size MP3 (128kbps)"),
     ]
 
     audio_formats: List[FormatOption] = []
@@ -223,7 +225,7 @@ async def get_video_info(canonical_url: str) -> VideoMetadata:
     thumbnail_url = thumbnails[-1].get("url") if thumbnails else info.get("thumbnail", "")
 
     return VideoMetadata(
-        id=info.get("id", ""),
+        id=info.get("id", video_id),
         url=canonical_url,
         title=info.get("title", "YouTube Video"),
         channel=info.get("uploader", "Unknown Channel"),

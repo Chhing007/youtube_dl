@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     curl \
     ca-certificates \
+    && (which node || ln -s $(which nodejs) /usr/local/bin/node) \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root application user
