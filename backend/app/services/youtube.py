@@ -11,6 +11,7 @@ from app.exceptions import (
     YouTubeRateLimitException,
     YouTubeAppException,
 )
+from app.services.security import extract_youtube_video_id
 
 
 def get_base_ydl_opts() -> Dict[str, Any]:
@@ -99,9 +100,28 @@ def _extract_metadata_sync(canonical_url: str) -> Dict[str, Any]:
             last_error = e
             continue
 
+    # If direct extraction encounters bot blocks or 429, fall back to high-availability Invidious mirrors
+    video_id = extract_youtube_video_id(canonical_url)
+    if video_id:
+        mirrors = [
+            f"https://yewtu.be/watch?v={video_id}",
+            f"https://invidious.flokinet.to/watch?v={video_id}",
+            f"https://inv.bp.projectsegfau.lt/watch?v={video_id}",
+        ]
+        for mirror_url in mirrors:
+            try:
+                mirror_opts = dict(base_opts)
+                mirror_opts.pop("extractor_args", None)
+                with yt_dlp.YoutubeDL(mirror_opts) as ydl:
+                    info = ydl.extract_info(mirror_url, download=False)
+                    if info and info.get("formats"):
+                        return ydl.sanitize_info(info)
+            except Exception:
+                continue
+
     msg = str(last_error or "Unknown error")
-    if "Private video" in msg or "Sign in to confirm" in msg or "bot" in msg.lower():
-        raise VideoUnavailableException(f"Video is protected or requires authentication: {msg}")
+    if "Private video" in msg:
+        raise VideoUnavailableException("This video is private or has been removed.")
     elif "HTTP Error 429" in msg or "Too Many Requests" in msg:
         raise YouTubeRateLimitException()
     elif "Video unavailable" in msg or "not found" in msg.lower():
@@ -109,7 +129,7 @@ def _extract_metadata_sync(canonical_url: str) -> Dict[str, Any]:
     elif "Premieres in" in msg or "live event" in msg.lower():
         raise LiveStreamNotSupportedException("Upcoming or live streams cannot be downloaded")
     else:
-        raise YouTubeAppException(status_code=400, detail=f"Failed to fetch video info: {msg}")
+        raise YouTubeAppException(status_code=400, detail=f"Failed to fetch video: {msg}")
 
 
 async def get_video_info(canonical_url: str) -> VideoMetadata:

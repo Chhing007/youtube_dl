@@ -7,7 +7,7 @@ from typing import AsyncGenerator, Dict, Any, Tuple
 import yt_dlp
 import aiofiles
 from app.config import settings
-from app.services.security import sanitize_filename
+from app.services.security import sanitize_filename, extract_youtube_video_id
 from app.exceptions import YouTubeAppException
 
 logger = logging.getLogger(__name__)
@@ -134,6 +134,25 @@ def _download_and_mux_sync(
         except Exception as e:
             last_error = e
             continue
+
+    # If direct download failed due to bot blocks, download via Invidious mirror
+    video_id = extract_youtube_video_id(canonical_url)
+    if video_id:
+        mirrors = [
+            f"https://yewtu.be/watch?v={video_id}",
+            f"https://invidious.flokinet.to/watch?v={video_id}",
+            f"https://inv.bp.projectsegfau.lt/watch?v={video_id}",
+        ]
+        for mirror_url in mirrors:
+            try:
+                mirror_opts = dict(ydl_opts)
+                mirror_opts.pop("extractor_args", None)
+                with yt_dlp.YoutubeDL(mirror_opts) as ydl:
+                    info = ydl.extract_info(mirror_url, download=True)
+                    title = info.get("title", "youtube_video")
+                    return title
+            except Exception:
+                continue
 
     if last_error:
         raise last_error
