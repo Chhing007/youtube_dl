@@ -1,0 +1,13 @@
+{
+  "name": "streamforge-suite",
+  "version": "1.0.0",
+  "description": "StreamForge - YouTube Video and Audio Suite",
+  "private": true,
+  "scripts": {
+    "dev": "node start-dev.js",
+    "start": "node start-dev.js",
+    "backend": "python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload",
+    "frontend": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend"
+  }
+}

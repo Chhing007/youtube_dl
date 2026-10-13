@@ -1,6 +1,8 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Union, Any
 import os
+import json
 from pathlib import Path
 
 
@@ -12,13 +14,32 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # CORS settings
-    ALLOWED_ORIGINS: List[str] = [
+    ALLOWED_ORIGINS: Union[List[str], str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
-        "*",
     ]
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            v_trimmed = v.strip()
+            if v_trimmed.startswith("[") and v_trimmed.endswith("]"):
+                try:
+                    return json.loads(v_trimmed)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        elif isinstance(v, (list, tuple)):
+            return list(v)
+        return [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+        ]
 
     # Rate Limiting (slowapi syntax)
     RATE_LIMIT_INFO: str = "30/minute"

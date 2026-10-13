@@ -31,6 +31,9 @@ def extract_youtube_video_id(url: str) -> Optional[str]:
         return None
 
     url = url.strip()
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
     try:
         parsed = urllib.parse.urlparse(url)
     except Exception:
@@ -40,7 +43,13 @@ def extract_youtube_video_id(url: str) -> Optional[str]:
         return None
 
     hostname = (parsed.hostname or "").lower()
-    if hostname not in ALLOWED_HOSTS:
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    if hostname.startswith("m."):
+        hostname = hostname[2:]
+
+    # Allowed base hostnames
+    if hostname not in ("youtube.com", "youtu.be", "music.youtube.com"):
         return None
 
     video_id: Optional[str] = None
@@ -51,7 +60,7 @@ def extract_youtube_video_id(url: str) -> Optional[str]:
         if path_parts and path_parts[0]:
             video_id = path_parts[0]
     else:
-        # Standard youtube.com URLs
+        # Standard youtube.com or music.youtube.com URLs
         path = parsed.path.lower()
         if path == "/watch":
             # Format: https://www.youtube.com/watch?v=<video_id>
@@ -59,13 +68,7 @@ def extract_youtube_video_id(url: str) -> Optional[str]:
             v_list = query.get("v")
             if v_list and len(v_list) > 0:
                 video_id = v_list[0]
-        elif path.startswith("/shorts/"):
-            # Format: https://www.youtube.com/shorts/<video_id>
-            parts = parsed.path.strip("/").split("/")
-            if len(parts) >= 2:
-                video_id = parts[1]
-        elif path.startswith("/embed/"):
-            # Format: https://www.youtube.com/embed/<video_id>
+        elif any(path.startswith(prefix) for prefix in ("/shorts/", "/embed/", "/live/", "/v/")):
             parts = parsed.path.strip("/").split("/")
             if len(parts) >= 2:
                 video_id = parts[1]

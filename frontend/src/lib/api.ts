@@ -1,20 +1,32 @@
 import axios from 'axios';
 import { VideoMetadata, ApiError } from './types';
 
+export function getApiBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location;
+    return `${protocol}//${hostname}:8000`;
+  }
+  return 'http://localhost:8000';
+}
+
 export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || 'https://youtube-backend-xjiu.onrender.com'
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 ).replace(/\/$/, '');
 
 export async function fetchVideoInfo(youtubeUrl: string): Promise<VideoMetadata> {
+  const baseUrl = getApiBaseUrl();
   try {
     const response = await axios.post<VideoMetadata>(
-      `${API_BASE_URL}/api/info`,
+      `${baseUrl}/api/info`,
       { url: youtubeUrl },
       {
         headers: {
           'Content-Type': 'application/json',
         },
-        timeout: 60000, // 60s timeout to allow Render free tier instance to wake up
+        timeout: 30000,
       }
     );
     return response.data;
@@ -23,10 +35,10 @@ export async function fetchVideoInfo(youtubeUrl: string): Promise<VideoMetadata>
       const errorData = err.response.data as ApiError;
       throw new Error(errorData.detail || 'Failed to fetch video information');
     } else if (err.code === 'ECONNABORTED') {
-      throw new Error('Connection timed out. Render backend may still be waking up. Please retry in a few seconds.');
+      throw new Error('Connection timed out. Please check if the backend server is responding.');
     } else if (err.message && err.message.includes('Network Error')) {
       throw new Error(
-        `Cannot connect to backend server (${API_BASE_URL}). If using Render free tier, please wait 30-40 seconds for it to wake up, or verify the backend is online.`
+        `Cannot connect to backend server (${baseUrl}). Please ensure the FastAPI backend is running on port 8000.`
       );
     }
     throw new Error(err.message || 'An unexpected error occurred while fetching video details.');
@@ -34,12 +46,13 @@ export async function fetchVideoInfo(youtubeUrl: string): Promise<VideoMetadata>
 }
 
 export function buildDownloadStreamUrl(url: string, format: 'video' | 'audio', quality: string): string {
+  const baseUrl = getApiBaseUrl();
   const params = new URLSearchParams({
     url: url.trim(),
     format,
     quality,
   });
-  return `${API_BASE_URL}/api/download?${params.toString()}`;
+  return `${baseUrl}/api/download?${params.toString()}`;
 }
 
 export async function initiateDirectDownload(

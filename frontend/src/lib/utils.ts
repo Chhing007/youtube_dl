@@ -5,18 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Robust regex pattern matching public YouTube URLs: watch, shorts, youtu.be, embed, music
+// Robust regex pattern matching all public YouTube URL formats
 export const YOUTUBE_URL_REGEX =
-  /^(https?:\/\/)?((www|m|music)\.)?(youtube\.com\/(watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})(\S*)?$/i;
-
-export function isValidYouTubeUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') return false;
-  const trimmed = url.trim();
-  return YOUTUBE_URL_REGEX.test(trimmed);
-}
+  /(?:youtu\.be\/|(?:www\.|m\.|music\.)?youtube\.com\/(?:embed\/|v\/|shorts\/|live\/|watch\?(?:.*&)?v=))([a-zA-Z0-9_-]{11})/i;
 
 export function extractYouTubeId(url: string): string | null {
-  if (!isValidYouTubeUrl(url)) return null;
-  const match = url.trim().match(/(?:v=|\/shorts\/|\/embed\/|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  const match = trimmed.match(YOUTUBE_URL_REGEX);
   return match ? match[1] : null;
+}
+
+export function isValidYouTubeUrl(url: string): boolean {
+  return extractYouTubeId(url) !== null;
 }

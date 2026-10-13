@@ -19,14 +19,21 @@ from app.exceptions import YouTubeAppException
 logger = logging.getLogger(__name__)
 
 
-def cleanup_file_safely(file_path: Path):
-    """Deletes temporary file if it exists, catching any OS exceptions."""
-    try:
-        if file_path.exists():
-            file_path.unlink()
-            logger.info(f"Cleaned up temporary file: {file_path}")
-    except Exception as e:
-        logger.warning(f"Failed to delete temp file {file_path}: {e}")
+def cleanup_file_safely(file_path: Path, retries: int = 3, delay: float = 0.2):
+    """Deletes temporary file if it exists, catching any OS exceptions with retries for Windows file locks."""
+    import time
+    for i in range(retries):
+        try:
+            if file_path.exists():
+                file_path.unlink()
+                logger.info(f"Cleaned up temporary file: {file_path}")
+            return
+        except PermissionError:
+            if i < retries - 1:
+                time.sleep(delay)
+        except Exception as e:
+            logger.warning(f"Failed to delete temp file {file_path}: {e}")
+            return
 
 
 def cleanup_stale_temp_files():
@@ -195,10 +202,13 @@ async def prepare_media_download(
 
     # Locate generated output file
     generated_file = None
-    for candidate in settings.TEMP_DIR.glob(f"{unique_id}.*"):
-        if candidate.is_file():
-            generated_file = candidate
-            break
+    if target_base.is_file():
+        generated_file = target_base
+    else:
+        for candidate in settings.TEMP_DIR.glob(f"{unique_id}*.{ext}"):
+            if candidate.is_file() and not candidate.name.endswith((".part", ".ytdl", ".temp")):
+                generated_file = candidate
+                break
 
     if not generated_file or not generated_file.exists():
         raise YouTubeAppException(

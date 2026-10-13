@@ -2,22 +2,28 @@
 
 import React, { useEffect, useState } from 'react';
 import { Youtube, Sparkles, ShieldCheck, Zap } from 'lucide-react';
-import { API_BASE_URL } from '@/lib/api';
+import { getApiBaseUrl } from '@/lib/api';
 
 export const Header: React.FC = () => {
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
+    let mounted = true;
     const checkHealth = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/health`, { method: 'GET' });
-        if (res.ok) setApiOnline(true);
-        else setApiOnline(false);
+        const baseUrl = getApiBaseUrl();
+        const res = await fetch(`${baseUrl}/api/health`, { method: 'GET' });
+        if (mounted) setApiOnline(res.ok);
       } catch {
-        setApiOnline(false);
+        if (mounted) setApiOnline(false);
       }
     };
     checkHealth();
+    const interval = setInterval(checkHealth, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   return (
