@@ -135,8 +135,11 @@ def _download_and_mux_sync(
 
     # Client strategies that bypass YouTube bot detection
     client_strategies = [
-        {"player_client": ["visionos", "default"]},
-        {"player_client": ["tv", "default"]},
+        {"player_client": ["android", "ios"]},
+        {"player_client": ["android"]},
+        {"player_client": ["visionos"]},
+        {"player_client": ["tv_embedded"]},
+        {"player_client": ["mweb"]},
         None,
     ]
 

@@ -7,13 +7,17 @@ export function getApiBaseUrl(): string {
   }
   if (typeof window !== 'undefined') {
     const { protocol, hostname } = window.location;
-    return `${protocol}//${hostname}:8000`;
+    // Local development: connect to local FastAPI backend on port 8000
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `${protocol}//${hostname}:8000`;
+    }
   }
-  return 'http://localhost:8000';
+  // Production / Vercel cloud deployment default
+  return 'https://youtube-backend-xjiu.onrender.com';
 }
 
 export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  process.env.NEXT_PUBLIC_API_URL || 'https://youtube-backend-xjiu.onrender.com'
 ).replace(/\/$/, '');
 
 export async function fetchVideoInfo(youtubeUrl: string): Promise<VideoMetadata> {
@@ -26,7 +30,7 @@ export async function fetchVideoInfo(youtubeUrl: string): Promise<VideoMetadata>
         headers: {
           'Content-Type': 'application/json',
         },
-        timeout: 30000,
+        timeout: 60000, // 60s timeout to allow Render free tier instance to wake up
       }
     );
     return response.data;
@@ -35,10 +39,10 @@ export async function fetchVideoInfo(youtubeUrl: string): Promise<VideoMetadata>
       const errorData = err.response.data as ApiError;
       throw new Error(errorData.detail || 'Failed to fetch video information');
     } else if (err.code === 'ECONNABORTED') {
-      throw new Error('Connection timed out. Please check if the backend server is responding.');
+      throw new Error('Connection timed out. Backend may be waking up from sleep. Please wait a moment and click Retry.');
     } else if (err.message && err.message.includes('Network Error')) {
       throw new Error(
-        `Cannot connect to backend server (${baseUrl}). Please ensure the FastAPI backend is running on port 8000.`
+        `Cannot connect to backend server (${baseUrl}). If waking up from free-tier sleep, please wait ~20-30 seconds and retry.`
       );
     }
     throw new Error(err.message || 'An unexpected error occurred while fetching video details.');

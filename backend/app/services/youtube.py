@@ -88,13 +88,13 @@ def _extract_metadata_sync(canonical_url: str) -> Dict[str, Any]:
     base_opts = get_base_ydl_opts()
     base_opts["skip_download"] = True
 
-    # Priority strategies:
-    # 1. visionos + default: Most resilient against YouTube bot detection in 2025/2026
-    # 2. tv + default: Smart TV client fallback
-    # 3. Default yt-dlp client routing
+    # Priority strategies for reliable metadata extraction (including cloud datacenter IPs like Render):
     client_strategies = [
-        {"player_client": ["visionos", "default"]},
-        {"player_client": ["tv", "default"]},
+        {"player_client": ["android", "ios"]},
+        {"player_client": ["android"]},
+        {"player_client": ["visionos"]},
+        {"player_client": ["tv_embedded"]},
+        {"player_client": ["mweb"]},
         None,
     ]
 
